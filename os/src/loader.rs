@@ -67,19 +67,19 @@ pub fn load_apps() {
     extern "C" {
         fn _num_app();
     }
-    let num_app_ptr = _num_app as usize as *const usize;
+    let num_app_ptr = _num_app as usize as *const usize;    //usize大小等于指针,因此可以转换
     let num_app = get_num_app();
-    let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };
+    let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };    //app的指令地址在储存数量的地址后面
     // clear i-cache first
     unsafe {
-        asm!("fence.i");
+        asm!("fence.i");    // fence.i用于同步指令和数据流,确保指令缓存中的指令与内存中的一致
     }
     // load apps
     for i in 0..num_app {
         let base_i = get_base_i(i);
         // clear region
         (base_i..base_i + APP_SIZE_LIMIT)
-            .for_each(|addr| unsafe { (addr as *mut u8).write_volatile(0) });
+            .for_each(|addr| unsafe { (addr as *mut u8).write_volatile(0) });       //初始化第i个app的内存
         // load app from data section to memory
         let src = unsafe {
             core::slice::from_raw_parts(app_start[i] as *const u8, app_start[i + 1] - app_start[i])

@@ -14,9 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use core::cell::RefMut;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, CLOCK_FREQ};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::timer::{get_time, MSEC_PER_SEC};
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -45,6 +47,9 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    current_start_time: usize,
+    running_time: [usize;MAX_APP_NUM],
+    syscall_times: [[u32; MAX_SYSCALL_NUM]; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -65,6 +70,9 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    current_start_time: 0,
+                    running_time: [0;MAX_APP_NUM],
+                    syscall_times: [[0;MAX_SYSCALL_NUM]; MAX_APP_NUM]
                 })
             },
         }
@@ -81,6 +89,7 @@ impl TaskManager {
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
+        inner.current_start_time = get_time();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -94,6 +103,7 @@ impl TaskManager {
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
+        inner.running_time[current] += 10;
         inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
@@ -123,6 +133,7 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            inner.current_start_time = get_time();
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -135,6 +146,24 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn get_current_task_time(&self) -> usize {
+        let inner: RefMut<TaskManagerInner> = self.inner.exclusive_access();
+        inner.running_time[inner.current_task] + (get_time() - inner.current_start_time) / (CLOCK_FREQ / MSEC_PER_SEC)
+    }
+
+    fn add_syscall_times(&self,id: usize) {
+        let mut inner: RefMut<TaskManagerInner> = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.syscall_times[cur][id] = inner.syscall_times[cur][id] + 1;
+    }
+
+    fn get_syscall_times(&self) -> [u32;MAX_SYSCALL_NUM]{
+        let inner: RefMut<TaskManagerInner> = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.syscall_times[cur].clone()
+    }
+
 }
 
 /// Run the first task in task list.
@@ -168,4 +197,19 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// get current task's syscall times, return an array
+pub fn get_syscall_times() -> [u32;MAX_SYSCALL_NUM] {
+    TASK_MANAGER.get_syscall_times()
+}
+
+/// get current runing task's info
+pub fn get_current_task_time() -> usize{
+    TASK_MANAGER.get_current_task_time()
+}
+
+/// add call times of id one time
+pub fn add_syscall_times(id: usize) {
+    TASK_MANAGER.add_syscall_times(id);
 }

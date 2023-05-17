@@ -1,6 +1,6 @@
 .altmacro
 .macro SAVE_SN n
-    sd s\n, (\n+2)*8(a0)
+    sd s\n, (\n+2)*8(a0)        //s\n即sn寄存器,s0~s11是被调用者保存寄存器
 .endm
 .macro LOAD_SN n
     ld s\n, (\n+2)*8(a1)
