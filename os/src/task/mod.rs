@@ -15,10 +15,10 @@ mod switch;
 mod task;
 
 use core::cell::RefMut;
-use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM, CLOCK_FREQ};
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
-use crate::timer::{get_time, MSEC_PER_SEC};
+use crate::timer::{get_time_ms};
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -89,7 +89,7 @@ impl TaskManager {
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
-        inner.current_start_time = get_time();
+        inner.current_start_time = get_time_ms();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -133,7 +133,7 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
-            inner.current_start_time = get_time();
+            inner.current_start_time = get_time_ms();
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -148,8 +148,9 @@ impl TaskManager {
     }
 
     fn get_current_task_time(&self) -> usize {
-        let inner: RefMut<TaskManagerInner> = self.inner.exclusive_access();
-        inner.running_time[inner.current_task] + (get_time() - inner.current_start_time) / (CLOCK_FREQ / MSEC_PER_SEC)
+        //let inner: RefMut<TaskManagerInner> = self.inner.exclusive_access();
+        //inner.running_time[inner.current_task] //+ 
+        get_time_ms() //- inner.current_start_time
     }
 
     fn add_syscall_times(&self,id: usize) {
